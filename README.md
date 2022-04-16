@@ -1,2 +1,2 @@
 # Godot-GDSandbox
-Sandbox area for testing WIP GDScripts
+Sandbox area for testing/sharing WIP misc. GDScripts.
