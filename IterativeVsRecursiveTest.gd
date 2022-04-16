@@ -29,24 +29,24 @@ func _ready() -> void:
 	var result1 : float = 0.0 #Recursive result should match Iterative
 	#Run the two functions to add the integer value of addCount to number.
 	tick_start = OS.get_ticks_usec()
-	result0 = iterativeAdd( number, addCount )
+	result0 = iterative_add( number, addCount )
 	tick_stop = OS.get_ticks_usec()
 	tick_delta0 = ( tick_stop - tick_start )
 	tick_start = OS.get_ticks_usec()
-	result1 = recursiveAdd( number, addCount )
+	result1 = recursive_add( number, addCount )
 	tick_stop = OS.get_ticks_usec()
 	tick_delta1 = ( tick_stop - tick_start )
 	#Print out the results of the tests for comparison/debugging as needed.
 	print("[INFO]: Iterative function time: '" + str( tick_delta0 ) + "'\tValue: '" + str(result0) + ".'")#Debugging
 	print("[INFO]: Recursive function time: '" + str( tick_delta1 ) + "'\tValue: '" + str(result1) + ".'")#Debugging
 
-func iterativeAdd( toNumber : float, count : int ) -> float:
+func iterative_add( toNumber : float, count : int ) -> float:
 	#Using a for loop to count through the loops to add one to the toNumber value.
 	for i in range(count):
 		toNumber += 1.0
 	return toNumber
 
-func recursiveAdd( toNumber : float, count : int ) -> float:
+func recursive_add( toNumber : float, count : int ) -> float:
 	#Using a recursive call to self.recursiveAdd() to add one to the toNumber value count times.
 	if(count > 0):
 		return self.recursiveAdd( toNumber + 1.0, count - 1 )
