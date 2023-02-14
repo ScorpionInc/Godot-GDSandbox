@@ -40,6 +40,9 @@ const DEFAULT_SCROLL_WHEEL_USAGE:bool = true
 #Variables / Exported Variables
 ###############################
 export(bool) var debug_mode:bool = false
+export(Mesh) var debug_mesh:Mesh = null
+export(Color) var debug_base_color:Color = Color.crimson
+export(Color) var debug_arm_color:Color = Color.aqua
 
 # I was going to have these parent spatial node names be editable.
 # This would allow the use of already existing parent spatial nodes by entering in the name of the nodes.
@@ -65,6 +68,10 @@ export(String) var distance_decrease_action_name:String = DEFAULT_DISTANCE_DECRE
 export(float) var distance_target:float = DEFAULT_CAMERA_DISTANCE# Current distance from origin the camera should be moving to
 export(float) var distance_min:float = DEFAULT_CAMERA_DISTANCE_MIN#TODO
 export(float) var distance_max:float = DEFAULT_CAMERA_DISTANCE_MAX#TODO
+
+var distance_acceleration:float = 0.0#TODO
+var distance_velocity:float = 0.0#TODO
+var distance_dampening:float = 0.0#TODO
 #Left/Right
 export(float) var yaw:float = DEFAULT_YAW setget yaw_set# Current yaw in radians
 export(float) var yaw_degrees:float = rad2deg(yaw) setget yaw_degrees_set# Current yaw in degrees
@@ -128,6 +135,13 @@ var degrees_per_pixel:Vector2 = Vector2.ZERO#TODO
 ##########
 #Functions
 ##########
+func printd(s:String, prefix:String = "[DEBUG]: "):
+	#Prints out a debug message if in debug mode and s isn't empty.
+	if(s == ""):
+		return
+	if(self.debug_mode):
+		print(prefix + s)
+
 func moveNumberTowardsNumber(value:float, target:float, speed:float):
 	#Adds or subtracts based upon the target value your moving towards
 	#Used for dampening of rotation.
@@ -157,6 +171,12 @@ func moveVector3TowardsVector3(value:Vector3, target:Vector3, speed:Vector3):
 	value.z = self.moveNumberTowardsNumber(value.z, target.z, speed.z)
 	return value
 
+func moveNumberTowardsNumberWithBounds(value:float, target:float, speed:float, bound:float):
+	#TODO fix direction flipping bug
+	#E.G. 0.5 is closer to 360.0 than 350.0 is, when bound is 360.0
+	bound = abs(bound)
+	pass
+
 func isBaseSpatial( node:Node ):
 	# Is node a spatial that is named rotation_base_name?
 	if not node is Spatial:
@@ -183,45 +203,55 @@ func setupCameraRotationNodes():
 	# The cameras current translation is used as the origin.
 	var current_parent_node:Node = self.get_parent()
 	if(not hasArmParent()):
-		rotation_arm = Spatial.new()
-		rotation_arm.name = rotation_arm_name
+		self.rotation_arm = MeshInstance.new()#Spatial.new()#Later on may make visible for debugging
+		if(not self.debug_mesh == null):
+			self.rotation_arm.mesh = self.debug_mesh.duplicate(true)
+			if(self.rotation_arm.mesh.material == null):
+				self.rotation_arm.mesh.material = SpatialMaterial.new()
+			if(self.rotation_arm.mesh.material is SpatialMaterial):
+				self.rotation_arm.mesh.material.albedo_color = self.debug_arm_color
+		self.rotation_arm.visible = self.debug_mode
+		self.rotation_arm.name = self.rotation_arm_name
 		var _returned_connect_value = rotation_arm.connect("tree_entered", self, "onArmAdded")
-		rotation_arm.translation = self.translation
-		rotation_arm.rotation.x = self.pitch# Initialize rotation
-		self.translation = Vector3(0.0, 0.0, self.distance)
+		self.rotation_arm.translation = self.translation#Move arm node to camera
+		self.rotation_arm.rotation.x = self.pitch# Initialize rotation
 		# Reparenting of camera node to a child of the generated arm spatial node.
-		#current_parent_node.add_child(rotation_arm)#Must be defered if called from _ready()
-		#current_parent_node.remove_child(self)#Must be defered if called from _ready()
-		#rotation_arm.add_child(self)#Must be defered if called from _ready()
+		#Must be defered if called from _ready()
 		current_parent_node.call_deferred("add_child", rotation_arm)
 		current_parent_node.call_deferred("remove_child", self)
 		rotation_arm.call_deferred("add_child", self)
 	#Arm should be defined. May or may not be in the tree if just created.(probably not)
 	if(not hasBaseSpatial()):
-		rotation_base = Spatial.new()
-		rotation_base.name = rotation_base_name
+		self.rotation_base = MeshInstance.new()#Spatial.new()#Later on may make visible for debugging
+		if(not self.debug_mesh == null):
+			self.rotation_base.mesh = self.debug_mesh.duplicate(true)
+			if(self.rotation_base.mesh.material == null):
+				self.rotation_base.mesh.material = SpatialMaterial.new()
+			if(self.rotation_base.mesh.material is SpatialMaterial):
+				self.rotation_base.mesh.material.albedo_color = self.debug_base_color
+		self.rotation_base.visible = self.debug_mode
+		self.rotation_base.name = self.rotation_base_name
 		var _returned_connect_value = rotation_base.connect("tree_entered", self, "onBaseAdded")
-		rotation_base.translation = rotation_arm.translation
-		rotation_arm.translation = Vector3.ZERO
-		rotation_base.rotation.y = self.yaw# Initialize rotation
-		current_parent_node.call_deferred("add_child", rotation_base)
-		current_parent_node.call_deferred("remove_child", rotation_arm)
-		rotation_base.call_deferred("add_child", rotation_arm)
+		self.rotation_base.translation = rotation_arm.translation#Move base node to the arm
+		self.rotation_arm.translation = Vector3.ZERO#Reset the arm's translation to the base
+		self.rotation_base.rotation.y = self.yaw# Initialize rotation
+		current_parent_node.call_deferred("add_child", self.rotation_base)
+		current_parent_node.call_deferred("remove_child", self.rotation_arm)
+		self.rotation_base.call_deferred("add_child", self.rotation_arm)
+	self.translation = Vector3(0.0, 0.0, self.distance)#Initialize distance
 	self.rotation.z = self.roll# Initialize rotation
 	return self
 
 func _updateYaw():
 	#Called by setter method to apply changed value to node(s).
 	if(self.rotation_base == null):
-		if(self.debug_mode):
-			print("[WARN]: Attempted to update camera yaw before the base gimbal node was initialized!")#Debugging
+		printd("Attempted to update camera yaw before the base gimbal node was initialized!", "[WARN]: ")#Debugging
 		return
 	self.rotation_base.rotation.y = self.yaw
 func _updatePitch():
 	#Called by setter method to apply changed value to node(s).
 	if(self.rotation_arm == null):
-		if(self.debug_mode):
-			print("[WARN]: Attempted to update camera pitch before the arm gimbal node was initialized!")#Debugging
+		printd("Attempted to update camera pitch before the arm gimbal node was initialized!", "[WARN]: ")#Debugging
 		return
 	self.rotation_arm.rotation.x = self.pitch
 func _updateRoll():
@@ -361,6 +391,7 @@ func _physics_process(_delta):
 	self.pitch_target += self.rotation_velocity_vector.x
 	self.yaw_target += self.rotation_velocity_vector.y
 	self.roll_target += self.rotation_velocity_vector.z
+	#TODO This needs to be changed. See Scratch area.
 	self.pitch = self.moveNumberTowardsNumber(self.pitch, self.pitch_target, self.rotation_target_acceleration_vector.x * _delta)
 	self.yaw = self.moveNumberTowardsNumber(self.yaw, self.yaw_target, self.rotation_target_acceleration_vector.y * _delta)
 	self.roll = self.moveNumberTowardsNumber(self.roll, self.roll_target, self.rotation_target_acceleration_vector.z * _delta)
@@ -373,8 +404,7 @@ func _physics_process(_delta):
 func onWindowResize():
 	#Called when window is resized.
 	#Updates viewport rectangle, and rotation per viewport pixel size.
-	if(self.debug_mode):
-		print("[DEBUG]: Window has been resized.")#Debugging
+	printd("Window has been resized.")#Debugging
 	self.last_viewport_size = self.get_viewport().size
 	self.last_viewport_center = self.last_viewport_size / 2.0
 	self.radians_per_pixel = self.divide_float_by_vector2(TWO_PIE, self.last_viewport_size)
@@ -383,14 +413,12 @@ func onBaseAdded():
 	#Method is called when the defered call to add the rotation_base node to the tree is completed.
 	#Had some weirdness with this at one point. This is here just in case I see it again.
 	#TODO: Remove this.
-	if(self.debug_mode):
-		print("[DEBUG]: Camera rotation base has been added to the current tree.")#Debugging
+	printd("Camera rotation base has been added to the current tree.")#Debugging
 func onArmAdded():
 	#Method is called when the defered call to add the rotation_arm node to the tree is completed.
 	#Had some weirdness with this at one point. This is here just in case I see it again.
 	#TODO: Remove this.
-	if(self.debug_mode):
-		print("[DEBUG]: Camera rotation arm has been added to the current tree.")#Debugging
+	printd("Camera rotation arm has been added to the current tree.")#Debugging
 
 ##########################
 #SetGets Methods/Functions
@@ -399,7 +427,9 @@ func onArmAdded():
 func distance_set( new_value:float ):
 	#Apply limits
 	distance = self.applyMinimumWithPossibleMaximum(new_value, self.distance_min, self.distance_max)
-	#Apply
+	#Apply only after nodes are initialized
+	if(not self.hasArmParent() or not self.hasArmParent()):
+		return
 	self.translation.z = distance
 
 #Left/Right(Yaw)
@@ -587,3 +617,14 @@ func roll_degrees_max_set( new_value:float ):
 	#Update
 	roll_max = deg2rad(new_value)
 	roll_degrees_max = new_value
+
+#Scratch Area please ignore:
+#Target is changed first to a value over its roll over. e.g. 360.5 degrees
+#Value is moving towards the target which just went from 360.5 tp 0.5 degrees
+#Value was a value close to 360 degrees. e.g. 355 degrees
+#BUG: When target rolls over, value reverses direction to go from 355 to 0.5 instead of continuing through 360 degrees.
+#TODO
+#I could make target roll over at a larger limit which would push back the problem. In most cases.
+#Better solution is for the move towards value to consider going up to go down.
+
+#Target values can go past value limits. Leading to slow responsiveness when direction of rotation is reversed.
