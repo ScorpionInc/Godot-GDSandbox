@@ -172,10 +172,45 @@ func moveVector3TowardsVector3(value:Vector3, target:Vector3, speed:Vector3):
 	return value
 
 func moveNumberTowardsNumberWithBounds(value:float, target:float, speed:float, bound:float):
-	#TODO fix direction flipping bug
-	#E.G. 0.5 is closer to 360.0 than 350.0 is, when bound is 360.0
+	#Moves value towards target value by speed amount with a rollover of bounds.
+	#E.g. when bound is 360, 5 is closer to 355 than 340.0 is. (-10 vs 15)
+	#Used to apply rotational velocity towards target rotation in _physics_process()
+	#Note: Doesn't apply bounds as a limit.
+	speed = abs(speed)
 	bound = abs(bound)
-	pass
+	#First we determine which direction is "closer"
+	var neg_distance:float = 0.0
+	var pos_distance:float = 0.0
+	if(target < value):
+		neg_distance = value - target
+		pos_distance = (bound - value) + target
+	else:
+		neg_distance = value + (bound - target)
+		pos_distance = target - value
+	if(neg_distance < pos_distance):
+		#We decrease by speed
+		if(value - speed <= target):
+			return target
+		else:
+			return value - speed
+	else:
+		#We increase by speed
+		if(value + speed >= target):
+			return target
+		else:
+			return value + speed
+func moveVector3TowardsNumberWithBounds(value:Vector3, target:float, speed:float, bounds:float):
+	#Helper Function
+	value.x = self.moveNumberTowardsNumberWithBounds(value.x, target, speed, bounds)
+	value.y = self.moveNumberTowardsNumberWithBounds(value.y, target, speed, bounds)
+	value.z = self.moveNumberTowardsNumberWithBounds(value.z, target, speed, bounds)
+	return value
+func moveVector3TowardsVector3WithBounds(value:Vector3, target:Vector3, speed:float, bounds:float):
+	#Helper Function
+	value.x = self.moveNumberTowardsNumberWithBounds(value.x, target.x, speed, bounds)
+	value.y = self.moveNumberTowardsNumberWithBounds(value.y, target.y, speed, bounds)
+	value.z = self.moveNumberTowardsNumberWithBounds(value.z, target.z, speed, bounds)
+	return value
 
 func isBaseSpatial( node:Node ):
 	# Is node a spatial that is named rotation_base_name?
@@ -392,9 +427,9 @@ func _physics_process(_delta):
 	self.yaw_target += self.rotation_velocity_vector.y
 	self.roll_target += self.rotation_velocity_vector.z
 	#TODO This needs to be changed. See Scratch area.
-	self.pitch = self.moveNumberTowardsNumber(self.pitch, self.pitch_target, self.rotation_target_acceleration_vector.x * _delta)
-	self.yaw = self.moveNumberTowardsNumber(self.yaw, self.yaw_target, self.rotation_target_acceleration_vector.y * _delta)
-	self.roll = self.moveNumberTowardsNumber(self.roll, self.roll_target, self.rotation_target_acceleration_vector.z * _delta)
+	self.pitch = self.moveNumberTowardsNumberWithBounds(self.pitch, self.pitch_target, self.rotation_target_acceleration_vector.x * _delta, TWO_PIE)
+	self.yaw = self.moveNumberTowardsNumberWithBounds(self.yaw, self.yaw_target, self.rotation_target_acceleration_vector.y * _delta, TWO_PIE)
+	self.roll = self.moveNumberTowardsNumberWithBounds(self.roll, self.roll_target, self.rotation_target_acceleration_vector.z * _delta, TWO_PIE)
 	#Apply rotational velocity dampening
 	self.rotation_velocity_vector = self.moveVector3TowardsVector3(self.rotation_velocity_vector, Vector3.ZERO, self.rotation_dampening_vector * _delta)
 
@@ -619,12 +654,4 @@ func roll_degrees_max_set( new_value:float ):
 	roll_degrees_max = new_value
 
 #Scratch Area please ignore:
-#Target is changed first to a value over its roll over. e.g. 360.5 degrees
-#Value is moving towards the target which just went from 360.5 tp 0.5 degrees
-#Value was a value close to 360 degrees. e.g. 355 degrees
-#BUG: When target rolls over, value reverses direction to go from 355 to 0.5 instead of continuing through 360 degrees.
-#TODO
-#I could make target roll over at a larger limit which would push back the problem. In most cases.
-#Better solution is for the move towards value to consider going up to go down.
-
 #Target values can go past value limits. Leading to slow responsiveness when direction of rotation is reversed.
