@@ -14,8 +14,9 @@ const DEFAULT_ROTATION_BASE_NAME:String = "CameraBase"# Yaw Node
 const DEFAULT_ROTATION_ARM_NAME:String = "CameraArm"# Pitch Node
 
 const DEFAULT_CAMERA_DISTANCE:float = 1.0
-const DEFAULT_CAMERA_DISTANCE_MIN:float = 0.0#Disabled
+const DEFAULT_CAMERA_DISTANCE_MIN:float = 0.001#Very close but not disabled.
 const DEFAULT_CAMERA_DISTANCE_MAX:float = 0.0#Disabled
+const DEFAULT_CAMERA_DISTANCE_ACCELERATION:float = 20.0#No good justification just felt like a good value.
 
 const DEFAULT_ROTATION_MIN:float = 0.0#Disabled
 const DEFAULT_ROTATION_MAX:float = 0.0#Disabled
@@ -33,6 +34,8 @@ const DEFAULT_PITCH_INCREASE_ACTION_NAME:String = "camera_pitch_down"
 const DEFAULT_PITCH_DECREASE_ACTION_NAME:String = "camera_pitch_up"
 const DEFAULT_ROLL_INCREASE_ACTION_NAME:String = "camera_roll_left"
 const DEFAULT_ROLL_DECREASE_ACTION_NAME:String = "camera_roll_right"
+
+const DEFAULT_PHYSICS_MASK:int = 1
 
 const DEFAULT_SCROLL_WHEEL_USAGE:bool = true
 
@@ -62,6 +65,7 @@ var rotation_base:Spatial = null
 var rotation_arm:Spatial = null
 
 #Camera Distance(in/out)
+var distance_direction:float = 0.0#What direction in/out did we last get an input event for?
 export(float) var distance:float = DEFAULT_CAMERA_DISTANCE setget distance_set# Current distance between camera and origin
 export(String) var distance_increase_action_name:String = DEFAULT_DISTANCE_INCREASE_ACTION_NAME# Name of the input action group used in increase the target distance value
 export(String) var distance_decrease_action_name:String = DEFAULT_DISTANCE_DECREASE_ACTION_NAME# Name of the input action group used in decrease the target distance value
@@ -69,9 +73,10 @@ export(float) var distance_target:float = DEFAULT_CAMERA_DISTANCE# Current dista
 export(float) var distance_min:float = DEFAULT_CAMERA_DISTANCE_MIN#TODO
 export(float) var distance_max:float = DEFAULT_CAMERA_DISTANCE_MAX#TODO
 
-var distance_acceleration:float = 0.0#TODO
-var distance_velocity:float = 0.0#TODO
-var distance_dampening:float = 0.0#TODO
+export(float) var distance_acceleration:float = DEFAULT_CAMERA_DISTANCE_ACCELERATION#How fast does the target distance change per input frame?
+export(float) var distance_target_acceleration:float = self.distance_acceleration#How fast should the actual distance change towards the target distance?(Smoothing)
+export(float) var distance_velocity:float = 0.0#How fast are we currently moving the target distance?
+export(float) var distance_dampening:float = 0.1#How much should we slow down the distance velocity every frame?
 #Left/Right
 export(float) var yaw:float = DEFAULT_YAW setget yaw_set# Current yaw in radians
 export(float) var yaw_degrees:float = rad2deg(yaw) setget yaw_degrees_set# Current yaw in degrees
@@ -105,18 +110,22 @@ export(float) var roll_min:float = DEFAULT_ROTATION_MIN setget roll_min_set# Lim
 export(float) var roll_max:float = DEFAULT_ROTATION_MAX setget roll_max_set# Limit the maximum roll value of the current camera in radians. Always positive.
 export(float) var roll_degrees_min:float = DEFAULT_ROTATION_DEGREES_MIN setget roll_degrees_min_set# Limit the minimum roll value of the current camera in degrees. Always positive.
 export(float) var roll_degrees_max:float = DEFAULT_ROTATION_DEGREES_MAX setget roll_degrees_max_set# Limit the maximum roll value of the current camera in degrees. Always positive.
-#Collision
-export(bool) var collide_camera:bool = false#TODO Camera collides with physics during movements/rotations.
 
-var rotation_direction_vector:Vector3 = Vector3.ZERO#TODO
-var rotation_velocity_vector:Vector3 = Vector3.ZERO#TODO
-var rotation_target_acceleration_vector:Vector3 = Vector3(self.TWO_PIE, self.TWO_PIE, self.TWO_PIE)#Disabled
-var rotation_acceleration_vector:Vector3 = Vector3(PI / 16, PI / 16, PI / 16)#TODO
-var rotation_dampening_vector:Vector3 = Vector3(PI / 32, PI / 32, PI / 32)#TODO
+#Collision
+export(int, LAYERS_3D_PHYSICS) var physics_mask:int = DEFAULT_PHYSICS_MASK
+export(bool) var collide_camera:bool = false#TODO Camera collides with physics during movements/rotations.
+#We will have to change distance directly no target distance to prevent visual clipping(no smooth).
+
+var rotation_direction_vector:Vector3 = Vector3.ZERO#TODO What was the desired direction of rotation based upon the last input event(s).
+export(Vector3) var rotation_velocity_vector:Vector3 = Vector3.ZERO#TODO How fast are we currently rotating the target each frame per axis?
+export(Vector3) var rotation_target_acceleration_vector:Vector3 = Vector3(self.TWO_PIE, self.TWO_PIE, self.TWO_PIE)#Disabled How fast towards the target do we accelerate?
+export(Vector3) var rotation_acceleration_vector:Vector3 = Vector3(PI / 16, PI / 16, PI / 16)#TODO How fast per frame do we change our velocity?
+export(Vector3) var rotation_dampening_vector:Vector3 = Vector3(PI / 32, PI / 32, PI / 32)#TODO How much per frame should we slow down our velocity without input.
 
 #Mouse
 export(bool) var use_scroll_wheel:bool = DEFAULT_SCROLL_WHEEL_USAGE#TODO
 export(bool) var use_mouse_movement:bool = false#TODO
+export(float, -1.0, 3.0) var mouse_sensitivity:float = 1.0#Scalar
 export(bool) var capture_mouse:bool = false#TODO
 export(bool) var require_left_drag:bool = false#TODO
 export(bool) var require_middle_drag:bool = false#TODO
@@ -372,9 +381,11 @@ func _input(_event):
 	#For example press and release are both actions with no way to change it in the map.
 	#And there is no axis for the mouse movements.
 	if(_event.is_action("camera_distance_out")):
-		self.distance += 0.1
+		self.distance_direction = 1.0
 	elif(_event.is_action("camera_distance_in")):
-		self.distance -= 0.1
+		self.distance_direction = -1.0
+	else:
+		self.distance_direction = 0.0
 	#Reset rotation direction vector
 	self.rotation_direction_vector = Vector3.ZERO
 	if(_event.is_action("camera_yaw_right")):
@@ -406,19 +417,29 @@ func _input(_event):
 			elif(_event.button_index == BUTTON_RIGHT):
 				self.was_rmb_pressed = false
 	if(_event is InputEventMouseMotion):
+		#TODO
+		#I'd like to handle this in physics_process() but its not until this point that
+		#we can safely say what the event type is to apply the rotation.
 		if(self.use_mouse_movement):
 			if(not self.require_left_drag and not self.require_middle_drag and not self.require_right_drag):
-				#No mouse buttons held required so movement is always active
-				self.yaw_target = (_event.position.x * radians_per_pixel.x) - PI
-				self.pitch_target = (_event.position.y * radians_per_pixel.y) - PI
+				#No mouse buttons being held are required so movement is always active.
+				self.yaw_target   = (_event.position.x * radians_per_pixel.x * self.mouse_sensitivity) - PI
+				self.pitch_target = (_event.position.y * radians_per_pixel.y * self.mouse_sensitivity) - PI
 			elif(self.mouse_btn_active()):
 				#Uses change in mouse position to change target rotation.
 				var mouse_delta = _event.position - self.last_mouse_pos
-				self.yaw_target += mouse_delta.x * radians_per_pixel.x
-				self.pitch_target += mouse_delta.y * radians_per_pixel.y
+				self.yaw_target   -= mouse_delta.x * radians_per_pixel.x * self.mouse_sensitivity
+				self.pitch_target += mouse_delta.y * radians_per_pixel.y * self.mouse_sensitivity
 		self.last_mouse_pos = _event.position
 
 func _physics_process(_delta):
+	#Distance
+	self.distance_velocity += self.distance_acceleration * self.distance_direction * _delta
+	self.distance_direction = 0.0#Reset Input Direction Vector
+	self.distance_target += self.distance_velocity
+	self.distance = self.moveNumberTowardsNumber(self.distance, self.distance_target, self.distance_acceleration * _delta)
+	self.distance_velocity = self.moveNumberTowardsNumber(self.distance_velocity, 0.0, self.distance_dampening)
+	#Rotation
 	#Apply acceleration based upon rotation direction
 	self.rotation_velocity_vector += self.rotation_acceleration_vector * self.rotation_direction_vector * _delta
 	self.rotation_direction_vector = Vector3.ZERO#Reset Input Direction Vector
@@ -426,12 +447,21 @@ func _physics_process(_delta):
 	self.pitch_target += self.rotation_velocity_vector.x
 	self.yaw_target += self.rotation_velocity_vector.y
 	self.roll_target += self.rotation_velocity_vector.z
-	#TODO This needs to be changed. See Scratch area.
+	#Move values towards target values by target acceleration.
 	self.pitch = self.moveNumberTowardsNumberWithBounds(self.pitch, self.pitch_target, self.rotation_target_acceleration_vector.x * _delta, TWO_PIE)
 	self.yaw = self.moveNumberTowardsNumberWithBounds(self.yaw, self.yaw_target, self.rotation_target_acceleration_vector.y * _delta, TWO_PIE)
 	self.roll = self.moveNumberTowardsNumberWithBounds(self.roll, self.roll_target, self.rotation_target_acceleration_vector.z * _delta, TWO_PIE)
 	#Apply rotational velocity dampening
 	self.rotation_velocity_vector = self.moveVector3TowardsVector3(self.rotation_velocity_vector, Vector3.ZERO, self.rotation_dampening_vector * _delta)
+	#Handle collision(s)
+	#Can't use positions of nodes to collide a raycast if nodes aren't done being setup yet.
+	if(not self.hasArmParent() or not self.hasBaseSpatial() or not self.collide_camera):
+		return
+	#Cast ray from base to camera, not the other way around. This will collide with the closest/nearest object first.
+	var space_state = self.get_world().direct_space_state
+	var collision = space_state.intersect_ray(self.rotation_base.global_translation, self.global_translation, [self, self.rotation_arm, self.rotation_base], self.physics_mask)
+	if(not collision.empty()):
+		self.distance = self.rotation_base.global_translation.distance_to(collision.position)
 
 ########
 #Signals
@@ -655,3 +685,4 @@ func roll_degrees_max_set( new_value:float ):
 
 #Scratch Area please ignore:
 #Target values can go past value limits. Leading to slow responsiveness when direction of rotation is reversed.
+#Distance can ignore minimum distance. Bug TODO
