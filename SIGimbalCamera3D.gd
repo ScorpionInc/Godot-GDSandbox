@@ -134,12 +134,28 @@ var last_mouse_pos:Vector2 = Vector2.ZERO#TODO
 var was_lmb_pressed:bool = false#TODO
 var was_mmb_pressed:bool = false#TODO
 var was_rmb_pressed:bool = false#TODO
-
 #Updated via onWindowResize()
 var last_viewport_size:Vector2 = Vector2.ZERO#TODO
 var last_viewport_center:Vector2 = Vector2.ZERO#TODO
 var radians_per_pixel:Vector2 = Vector2.ZERO#TODO
 var degrees_per_pixel:Vector2 = Vector2.ZERO#TODO
+
+#Movement
+#TODO
+export(bool) var allow_camera_movement:bool = false
+export(bool) var move_parent:bool = false
+var movement_direction_vector:Vector3 = Vector3.ZERO#TODO What was the desired direction of movement based upon the last input event(s).
+export(String) var movement_forward_action_name:String = "camera_move_forward"#TODO
+export(String) var movement_backward_action_name:String = "camera_move_backward"#TODO
+export(String) var movement_left_action_name:String = "camera_move_left"#TODO
+export(String) var movement_right_action_name:String = "camera_move_right"#TODO
+export(String) var movement_up_action_name:String = "camera_move_up"#TODO
+export(String) var movement_down_action_name:String = "camera_move_down"#TODO
+export(Vector3) var movement_velocity_vector:Vector3 = Vector3.ZERO#TODO How fast are we currently moving the target position each frame per axis?
+export(Vector3) var movement_acceleration_vector:Vector3 = Vector3(3.0, 3.0, 3.0)#TODO How fast per frame do we change our velocity?
+export(Vector3) var movement_target_acceleration_vector:Vector3 = self.movement_acceleration_vector#Disabled How fast towards the target do we accelerate?
+export(Vector3) var movement_dampening_vector:Vector3 = Vector3(0.1, 0.1, 0.1)#TODO How much per frame should we slow down our velocity without input.
+export(Vector3) var movement_maximum_velocity:Vector3 = Vector3.INF#Disabled
 
 ##########
 #Functions
@@ -372,34 +388,51 @@ func _ready():
 	self.set_process_input(true)
 	self.set_process(false)
 	self.set_physics_process(true)
-	#if(Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED):#TODO
-	#Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)#TODO
+	#Doesn't receive mouse events?
+	#if(Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED and self.capture_mouse):#TODO
+	#	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)#TODO
 
 #(x,y,z) => (pitch,yaw,roll)
 func _input(_event):
 	#It makes me sad that Input map doesn't work as well as hard coding some inputs.
 	#For example press and release are both actions with no way to change it in the map.
 	#And there is no axis for the mouse movements.
-	if(_event.is_action("camera_distance_out")):
+	if(_event.is_action(self.distance_increase_action_name)):#camera_distance_out
 		self.distance_direction = 1.0
-	elif(_event.is_action("camera_distance_in")):
+	elif(_event.is_action(self.distance_decrease_action_name)):#camera_distance_in
 		self.distance_direction = -1.0
 	else:
 		self.distance_direction = 0.0
 	#Reset rotation direction vector
 	self.rotation_direction_vector = Vector3.ZERO
-	if(_event.is_action("camera_yaw_right")):
+	if(_event.is_action(self.yaw_increase_action_name)):#camera_yaw_right
 		self.rotation_direction_vector.y += 1.0
-	if(_event.is_action("camera_yaw_left")):
+	if(_event.is_action(self.yaw_decrease_action_name)):#camera_yaw_left
 		self.rotation_direction_vector.y -= 1.0
-	if(_event.is_action("camera_pitch_down")):
+	if(_event.is_action(self.pitch_increase_action_name)):#camera_pitch_down
 		self.rotation_direction_vector.x += 1.0
-	if(_event.is_action("camera_pitch_up")):
+	if(_event.is_action(self.pitch_decrease_action_name)):#camera_pitch_up
 		self.rotation_direction_vector.x -= 1.0
-	if(_event.is_action("camera_roll_left")):
+	if(_event.is_action(self.roll_increase_action_name)):#camera_roll_left
 		self.rotation_direction_vector.z += 1.0
-	if(_event.is_action("camera_roll_right")):
+	if(_event.is_action(self.roll_decrease_action_name)):#camera_roll_right
 		self.rotation_direction_vector.z -= 1.0
+	#Camera/Parent movements
+	#TODO
+	#Reset movement direction vector
+	self.movement_direction_vector = Vector3.ZERO
+	if(_event.is_action(self.movement_forward_action_name)):#camera_move_forward
+		self.movement_direction_vector.z -= 1.0
+	if(_event.is_action(self.movement_backward_action_name)):#camera_move_backward
+		self.movement_direction_vector.z += 1.0
+	if(_event.is_action(self.movement_left_action_name)):#camera_move_left
+		self.movement_direction_vector.x -= 1.0
+	if(_event.is_action(self.movement_right_action_name)):#camera_move_right
+		self.movement_direction_vector.x += 1.0
+	if(_event.is_action(self.movement_up_action_name)):#camera_move_up
+		self.movement_direction_vector.y += 1.0
+	if(_event.is_action(self.movement_down_action_name)):#camera_move_down
+		self.movement_direction_vector.y -= 1.0
 	#Mouse movements
 	if(_event is InputEventMouseButton):
 		if(_event.pressed):
@@ -452,7 +485,25 @@ func _physics_process(_delta):
 	self.yaw = self.moveNumberTowardsNumberWithBounds(self.yaw, self.yaw_target, self.rotation_target_acceleration_vector.y * _delta, TWO_PIE)
 	self.roll = self.moveNumberTowardsNumberWithBounds(self.roll, self.roll_target, self.rotation_target_acceleration_vector.z * _delta, TWO_PIE)
 	#Apply rotational velocity dampening
-	self.rotation_velocity_vector = self.moveVector3TowardsVector3(self.rotation_velocity_vector, Vector3.ZERO, self.rotation_dampening_vector * _delta)
+	self.rotation_velocity_vector = self.moveVector3TowardsVector3(self.rotation_velocity_vector, Vector3.ZERO, self.rotation_dampening_vector)
+	#Camera/Parent Movements
+	#TODO
+	self.movement_velocity_vector += self.movement_acceleration_vector * self.movement_direction_vector * _delta
+	self.movement_direction_vector = Vector3.ZERO#Reset movement direction vector
+	#Apply movement
+	if(self.allow_camera_movement):
+		if(self.move_parent):
+			if(self.hasArmParent() and self.hasBaseSpatial()):
+				self.rotation_base.get_parent_spatial().translation += self.movement_velocity_vector.rotated(Vector3.UP, self.yaw)
+			else:
+				self.get_parent_spatial().translation += self.movement_velocity_vector.rotated(Vector3.UP, self.yaw)
+		else:
+			if(self.hasArmParent() and self.hasBaseSpatial()):
+				self.rotation_base.translation += self.movement_velocity_vector.rotated(Vector3.UP, self.yaw)
+			else:
+				self.translation += self.movement_velocity_vector.rotated(Vector3.UP, self.yaw)
+	#Apply Movement Velocity Dampening
+	self.movement_velocity_vector = self.moveVector3TowardsVector3(self.movement_velocity_vector, Vector3.ZERO, self.movement_dampening_vector)
 	#Handle collision(s)
 	#Can't use positions of nodes to collide a raycast if nodes aren't done being setup yet.
 	if(not self.hasArmParent() or not self.hasBaseSpatial() or not self.collide_camera):
@@ -686,3 +737,5 @@ func roll_degrees_max_set( new_value:float ):
 #Scratch Area please ignore:
 #Target values can go past value limits. Leading to slow responsiveness when direction of rotation is reversed.
 #Distance can ignore minimum distance. Bug TODO
+#Movement is buggy but implemented. Direction not relative to camera. Only reading one key at a time. TODO BUG
+#I may move smoothing/lerp/interpolation stuff to a seperate class to shrink this script as its getting bloated. TODO
