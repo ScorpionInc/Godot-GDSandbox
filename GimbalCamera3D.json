@@ -1,0 +1,44 @@
+{
+"header_comments":[
+	"Gimbal node based 3D camera control script.",
+	"Written by: ScorpionInc",
+	"Version: 0.0.5a",
+	"## WARNING ###",
+	"This scripts changes the current scene tree by adding two \"gimbal\" nodes at the camera position for easier rotation math.",
+	"## WARNING ###"
+	],
+"constants":[
+		{"tooltip":["Defined for reference in radian angle calculations."],
+		"name":"two_pi","type":"float","value":"(2.0 * PI)","modes":0}
+	],
+"variables":[
+		{"tooltip":["Used to toggle debugging mode to find bugs."],
+		"export":true,"name":"debug_mode","type":"bool","value":"false","modes":0},
+		{"tooltip":["Specifies the visual mesh to use when displaying gimbal nodes."],
+		"export":true,"name":"debug_mesh","type":"Mesh","value":"null","modes":0},
+		{"tooltip":["What the color of the base gimbal should be."],
+		"export":true,"name":"debug_base_color","type":"Color","value":"Color.crimson","modes":0},
+		{"tooltip":["What the color of the arm gimbal should be."],
+		"export":true,"name":"debug_arm_color","type":"Color","value":"Color.aqua","modes":0},
+		{},
+
+		{"export":false,"name":"rotation_base_name","type":"String","value":"\"CameraBase\"","modes":0,"generate_default":true,"tooltip":["Name of the base gimbal node."]},
+		{"export":false,"name":"rotation_arm_name","type":"String","value":"\"CameraArm\"","modes":0,"generate_default":true,"tooltip":["Name of the arm gimbal node."]},
+		{},
+
+		{"export":false,"name":"distance_direction","type":"float","value":"0.0","modes":0,"generate_default":false},
+		{"export":true,"name":"distance","type":"float","value":"1.0","modes":0,"generate_default":true},
+		{"export":true,"name":"distance_increase_action_name","type":"String","value":"\"camera_distance_out\"","modes":0,"generate_default":true},
+		{"export":true,"name":"distance_decrease_action_name","type":"String","value":"\"camera_distance_in\"","modes":0,"generate_default":true},
+		{"export":true,"name":"distance_target","type":"float","value":"DEFAULT_DISTANCE_DIRECTION","modes":0,"generate_default":true},
+		{"export":true,"name":"distance_min","type":"float","value":"0.001","modes":0,"generate_default":true},
+		{"export":true,"name":"distance_max","type":"float","value":"0.0","modes":0,"generate_default":true},
+		{},
+		{"export":true,"name":"distance_acceleration","type":"float","value":"20.0","modes":0,"generate_default":true},
+		{"export":true,"name":"distance_target_acceleration","type":"float","value":"self.distance_acceleration","modes":0,"generate_default":false},
+		{"export":true,"name":"distance_velocity","type":"float","value":"0.0","modes":0,"generate_default":false},
+		{"export":true,"name":"distance_dampening","type":"float","value":"0.1","modes":0,"generate_default":false},
+		{},
+		{}
+	]
+}
