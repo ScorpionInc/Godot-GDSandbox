@@ -27,6 +27,18 @@ $default_prefix = "DEFAULT_";
 $json = "";
 $json_data = array();
 
+//!TODO
+//The meaning of these flags are/should be script/json specific.
+$script_mode           = 0b0000000000000000;//uint16
+$FLAG_DISABLE_ALL      = 0b1111111111111111;
+$FLAG_DISABLE_DEBUG    = 0b0000000000000001;
+$FLAG_DISABLE_ROTATION = 0b0000000000000010;
+$FLAG_DISABLE_MOTION   = 0b0000000000000100;
+$FLAG_DISABLE_COLLISION= 0b0000000000001000;
+$FLAG_DISABLE_LERP     = 0b0000000000010000;
+$FLAG_DISABLE_LIMITS   = 0b0000000000100000;
+$FLAG_DISABLE_MOUSE    = 0b0000000001000000;
+
 //Functions
 function is_mode( int $test_mode ) : bool
 {
@@ -36,7 +48,7 @@ function is_mode( int $test_mode ) : bool
 	return true;
 }
 //Methods
-function print_header_comment(string $hc)
+function print_comment(string $hc)
 {
 	print("#" . $hc . "\n");
 }
@@ -89,7 +101,15 @@ function print_constant(array $c)
 	{
 		print(":" . $c["type"]);
 	}
-	print(" = " . $c["value"] . "\n");
+	print(" = " . $c["value"]);
+	if(isset($c["comment"]))
+	{
+		print_comment($c["comment"]);
+	}
+	else
+	{
+		print("\n");
+	}
 }
 function print_variable(array $v)
 {
@@ -138,7 +158,14 @@ function print_variable(array $v)
 		}
 	}
 	if(isset($v["setget"])){ print(" setget " . $v["setget"]); }
-	print("\n");
+	if(isset($v["comment"]))
+	{
+		print_comment($v["comment"]);
+	}
+	else
+	{
+		print("\n");
+	}
 }
 function preprocess_variable_constants(array $variables)
 {
@@ -154,6 +181,7 @@ function preprocess_variable_constants(array $variables)
 		}
 		if(isset($next["generate_default"]))
 		{
+			if(!$next["generate_default"]) continue;
 			array_push($json_data["constants"], array(
 			"name" => $default_prefix . $next["name"],
 			"type" => $next["type"],
@@ -162,20 +190,129 @@ function preprocess_variable_constants(array $variables)
 		}
 	}
 }
+function print_function(array $f)
+{
+	//Prints a GDScript function from array
+	$temp_flag = false;
+	$temp_count = 0;
+	if($f == null)
+	{
+		//Used for manual formatting.
+		print("\n");
+		return;
+	}
+	if($f["name"] == null or strlen($f["name"]) <= 0)//Warning: strlen(null) is deprecated.
+	{
+		printd("Failed to print function. Function name was undefined or empty.", "[WARN]: ");
+		return;
+	}
+	print("func " . strtolower($f["name"]) . "(");
+	if(isset($f["parameters"]))
+	{
+		$temp_count = count($f["parameters"]);
+		if($temp_count > 0)
+			$temp_flag = true;
+	}
+	if($temp_flag)
+	{
+		foreach($f["parameters"] as $i => $next)
+		{
+			print($next);
+			if(($i + 1) < $temp_count)
+				print(", ");
+		}
+	}
+	$temp_flag = false;
+	$temp_count = 0;
+	print(")");
+	if(isset($f["type"]))
+	{
+		print(" -> " . $f["type"]);
+	}
+	print(":\n");
+	if(isset($f["code"]))
+	{
+		if(count($f["code"]) > 0)
+			$temp_flag = true;
+	}
+	if($temp_flag)
+	{
+		foreach($f["code"] as $i => $next)
+			print("\t" . $next . "\n");
+	} else {
+		print("\tpass\n");
+	}
+	$temp_flag = false;
+}
+function print_script( $json_data, $script_mode = 0 )
+{
+	//Processes and prints a GDScript from json_data
+	//Pre-Processing
+	preprocess_variable_constants($json_data["variables"]);
+	//Print Header Comments
+	if(isset($json_data["header_comments"]))
+	{
+		foreach($json_data["header_comments"] as $i => $next)
+		{
+			print_comment($next);
+		}
+		print("\n");
+	}
+	//Print Constants
+	if(isset($json_data["constants"]))
+	{
+		print("########################\n");
+		print("# Constants / Defaults #\n");
+		print("########################\n");
+		foreach($json_data["constants"] as $i => $next)
+		{
+			print_constant($next);
+		}
+		print("\n");
+	}
+	//Print Variables
+	if(isset($json_data["variables"]))
+	{
+		print("##################################\n");
+		print("# Variables / Exported Variables #\n");
+		print("##################################\n");
+		foreach($json_data["variables"] as $i => $next)
+		{
+			print_variable($next);
+		}
+		print("\n");
+	}
+	//Functions/Methods
+	if(isset($json_data["functions"]))
+	{
+		print("####################################################\n");
+		print("# Functions / Methods / Events / Signals / SetGets #\n");
+		print("####################################################\n");
+		foreach($json_data["functions"] as $i => $next)
+		{
+			print_function($next);
+		}
+		print("\n");
+	}
+}
+function load_json( string $file_path )
+{
+	//Attempts to read json from file, decode, and then return value.
+	// Read the JSON file.
+	$json = file_get_contents('./Script.json');
+	if($json == false)
+	{
+		printd("load_json() Failed to read script file.");
+		return null;
+	} else {
+		printd("load_json() Finished reading in the raw JSON file.");
+	}
+	// Decode the JSON file
+	return(json_decode($json, true, 512));
+}
 
 // Start main execution.
-// Read the JSON file 
-$json = file_get_contents('./Script.json');
-if($json == false)
-{
-	printd("Failed to read script file.");
-}
-else
-{
-	printd("Finished reading in the raw JSON file.");
-}
-// Decode the JSON file
-$json_data = json_decode($json, true, 512);
+$json_data = load_json('./Script.json');
 if($json_data == null)
 {
 	printd("Failed to parse JSON data.");
@@ -183,39 +320,8 @@ if($json_data == null)
 }
 // Display data(Debugging)
 if($debug_mode){ printd("Parsed JSON recursive value: "); print_r($json_data); }
-
-//Pre-Processing
-preprocess_variable_constants($json_data["variables"]);
-
-//Print Header Comments
-foreach($json_data["header_comments"] as $i => $next)
-{
-	print_header_comment($next);
-}
-print("\n");
-
-//Print Constants
-print("#####################\n");
-print("#Constants / Defaults\n");
-print("#####################\n");
-foreach($json_data["constants"] as $i => $next)
-{
-	print_constant($next);
-}
-print("\n");
-
-//Print Variables
-print("###############################\n");
-print("#Variables / Exported Variables\n");
-print("###############################\n");
-foreach($json_data["variables"] as $i => $next)
-{
-	print_variable($next);
-}
-print("\n");
-
-//!TODO Functions/Methods/Events/Signals/SetGets/ect.
-
+// Print
+print_script($json_data);
 //Finish
 printd("Script has stopped.");
 ?>
